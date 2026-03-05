@@ -1,4 +1,5 @@
 // Client/src/App.jsx
+// import "dotenv/config";
 import { useEffect, useState } from "react";
 import { encryptFileWithWrappedKey, decryptPackage, decryptMeta } from "./crypto/crypto.js";
 
@@ -32,6 +33,7 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState(""); // for register
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
 
   // files
   const [selected, setSelected] = useState(null);
@@ -115,36 +117,35 @@ export default function App() {
     setStatus("Registered successfully. Now click Login.");
   }
 
-  async function onLogin() {
+ async function onLogin() {
     setStatus("");
     if (!email || !password) {
       setStatus("Login requires: email, password");
       return;
     }
-
     const res = await fetch(`${API_BASE}/users/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-
-    if (!res.ok) {
-      const err = await res.text();
-      setStatus(`Login failed: ${err}`);
-      return;
-    }
-
-    const data = await res.json();
-    const token = data?.token;
-    if (!token) {
-      setStatus("No token returned from server.");
-      return;
-    }
-
-    setToken(token);
-    setStage("files");
-    setStatus("Logged in.");
+    if (!res.ok) { setStatus(`Login failed: ${await res.text()}`); return; }
+    setStatus("Verification code sent to your email.");
+    setStage("verify");
   }
+  async function onVerifyOtp() {
+  if (!otp) { setStatus("הכנס קוד"); return; }
+  const res = await fetch(`${API_BASE}/users/verify-otp`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp }),
+  });
+  if (!res.ok) { setStatus(`שגיאה: ${await res.text()}`); return; }
+  const data = await res.json();
+  if (!data.token) { setStatus("No token"); return; }
+  setToken(data.token);
+  setOtp("");
+  setStage("files");
+}
+
 
   function onLogout() {
     clearToken();
@@ -251,57 +252,70 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
       setStatus(`Decrypt failed: ${String(e)}`);
     }
   }
+// הוסף את הבלוק הזה לפני: if (stage === "verify") {
 
-  // ---------- UI ----------
   if (stage === "login") {
     return (
-      <div style={{ maxWidth: 520, margin: "60px auto", fontFamily: "Arial" }}>
-        <h2>SecureSync – Login / Register</h2>
-
+      <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
+        <h2>SecureSync</h2>
         <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-          <label style={{ display: "block", marginBottom: 6 }}>Email</label>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ width: "100%", padding: 8, marginBottom: 12 }}
-            placeholder="email@example.com"
-          />
-
-          <label style={{ display: "block", marginBottom: 6 }}>
-            Name (only for register)
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ width: "100%", padding: 8, marginBottom: 12 }}
-            placeholder="Your name"
-          />
-
-          <label style={{ display: "block", marginBottom: 6 }}>Password</label>
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            style={{ width: "100%", padding: 8, marginBottom: 12 }}
-            placeholder="********"
-          />
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={onLogin} style={{ padding: "8px 12px" }}>
-              Login
-            </button>
-            <button onClick={onRegister} style={{ padding: "8px 12px" }}>
-              Register
-            </button>
+          <div style={{ marginBottom: 8 }}>
+            <label>Email</label><br />
+            <input value={email} onChange={(e) => setEmail(e.target.value)}
+              style={{ width: "100%", padding: 8 }} />
           </div>
-
-          <div style={{ marginTop: 10, color: "#444", whiteSpace: "pre-wrap" }}>
-            {status}
+          <div style={{ marginBottom: 8 }}>
+            <label>Name (register only)</label><br />
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              style={{ width: "100%", padding: 8 }} />
           </div>
+          <div style={{ marginBottom: 12 }}>
+            <label>Password</label><br />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              style={{ width: "100%", padding: 8 }}
+              onKeyDown={(e) => e.key === "Enter" && onLogin()} />
+          </div>
+          <button onClick={onLogin} style={{ width: "100%", padding: "10px", marginBottom: 8 }}>Login</button>
+          <button onClick={onRegister} style={{ width: "100%", padding: "10px", background: "none", border: "1px solid #aaa" }}>Register</button>
+          <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
         </div>
       </div>
     );
   }
+
+  // ---------- UI ----------
+  if (stage === "verify") {
+  return (
+    <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
+      <h2>SecureSync – אימות דו-שלבי</h2>
+      <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+        <p>נשלח קוד בן 4 ספרות לכתובת <strong>{email}</strong></p>
+        <label style={{ display: "block", marginBottom: 6 }}>קוד אימות</label>
+        <input
+          value={otp}
+          onChange={(e) => setOtp(e.target.value)}
+          maxLength={4}
+          inputMode="numeric"
+          placeholder="1234"
+          style={{ width: "100%", padding: 12, fontSize: 24, textAlign: "center", letterSpacing: 8, marginBottom: 12 }}
+          onKeyDown={(e) => e.key === "Enter" && onVerifyOtp()}
+          autoFocus
+        />
+        <button onClick={onVerifyOtp} style={{ width: "100%", padding: "10px", fontSize: 16 }}>
+          אמת
+        </button>
+        <button
+          onClick={() => { setStage("login"); setOtp(""); setStatus(""); }}
+          style={{ width: "100%", padding: "8px", marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#666" }}
+        >
+          חזרה
+        </button>
+        <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+      </div>
+    </div>
+  );
+}
+
 
   // stage === "files"
   return (
