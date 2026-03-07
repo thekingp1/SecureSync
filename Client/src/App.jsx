@@ -1,8 +1,5 @@
-// Client/src/App.jsx
-// import "dotenv/config";
 import { useEffect, useState } from "react";
 import { encryptFileWithWrappedKey, decryptPackage, decryptMeta } from "./crypto/crypto.js";
-
 
 const API_BASE = "http://localhost:4000";
 
@@ -18,7 +15,6 @@ function downloadBlob(blob, filename) {
 }
 
 function decodeMetaFromHeader(metaHeader) {
-  // metaHeader is base64url from the server
   let b64 = metaHeader.trim().replace(/-/g, "+").replace(/_/g, "/");
   while (b64.length % 4 !== 0) b64 += "=";
   const json = atob(b64);
@@ -26,20 +22,16 @@ function decodeMetaFromHeader(metaHeader) {
 }
 
 export default function App() {
-  // stage: "login" | "files"
   const [stage, setStage] = useState("login");
 
-  // auth
   const [email, setEmail] = useState("");
-  const [name, setName] = useState(""); // for register
+  const [name, setName] = useState(""); 
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
 
-  // files
   const [selected, setSelected] = useState(null);
   const [files, setFiles] = useState([]);
 
-  // status
   const [status, setStatus] = useState("");
 
   function getToken() {
@@ -52,7 +44,6 @@ export default function App() {
     localStorage.removeItem("securesync_token");
   }
 
-  // auto-login if token exists
   useEffect(() => {
     const t = getToken();
     if (t) setStage("files");
@@ -88,11 +79,9 @@ export default function App() {
   setFiles(filesWithNames);
 }
 
-  // when entering files stage, load list
   useEffect(() => {
     if (stage !== "files") return;
     refreshFiles().catch((e) => setStatus(`Failed to load files: ${String(e)}`));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
   async function onRegister() {
@@ -169,11 +158,9 @@ export default function App() {
     setStatus("Uploading ciphertext...");
     const form = new FormData();
 
-    // Server expects field name "file"
     const encryptedName = `${selected.name}.enc`;
     form.append("file", ciphertext, encryptedName);
 
-    // Send encryption metadata fields
     form.append("algorithm", meta.algorithm);
     form.append("ivB64", meta.ivB64);
     form.append("wrappedKeyB64", meta.wrappedKeyB64);
@@ -252,7 +239,29 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
       setStatus(`Decrypt failed: ${String(e)}`);
     }
   }
-// הוסף את הבלוק הזה לפני: if (stage === "verify") {
+  async function onDelete(fileId) {
+  if (!window.confirm("למחוק את הקובץ לצמיתות?")) return;
+  const token = getToken();
+  if (!token) { setStatus("Not authenticated."); return; }
+
+  const res = await fetch(`${API_BASE}/files/${fileId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 401) {
+    clearToken(); setStage("login");
+    setStatus("Session expired. Please login again.");
+    return;
+  }
+  if (!res.ok) {
+    setStatus(`Delete failed: ${await res.text()}`);
+    return;
+  }
+
+  setFiles((prev) => prev.filter((f) => f._id !== fileId));
+  setStatus("File deleted.");
+}
 
   if (stage === "login") {
     return (
@@ -283,7 +292,6 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
     );
   }
 
-  // ---------- UI ----------
   if (stage === "verify") {
   return (
     <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
@@ -316,8 +324,6 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
   );
 }
 
-
-  // stage === "files"
   return (
     <div style={{ maxWidth: 900, margin: "30px auto", fontFamily: "Arial" }}>
       <div
@@ -376,6 +382,11 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
                 <button onClick={() => onDownloadDecrypt(f._id)}>
                   Download + Decrypt
                 </button>
+                <button onClick={()=> onDelete(f._id)}
+                  style={{color: "#fff", background: "#c00", border: "none", padding: "4px 10px", 
+                  cursor: "pointer", borderRadius: 4}}>
+                    Delete
+                  </button>
               </td>
             </tr>
           ))}

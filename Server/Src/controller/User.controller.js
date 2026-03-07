@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 });
 
 function generateOtp() {
-  return String(Math.floor(1000 + Math.random() * 9000)); // 4 ספרות: 1000–9999
+  return String(Math.floor(1000 + Math.random() * 9000)); 
 }
 
 export async function register(req, res) {
@@ -45,13 +45,11 @@ export async function login(req, res) {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ message: "Invalid credentials" });
 
-    // יצירת OTP ושמירה ב-DB
     const otp = generateOtp();
     user.otpCode = await bcrypt.hash(otp, 10);
-    user.otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 דקות
+    user.otpExpires = new Date(Date.now() + 5 * 60 * 1000);
     await user.save();
 
-    // שליחת מייל
     await transporter.sendMail({
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: user.email,
@@ -80,7 +78,6 @@ export async function verifyOtp(req, res) {
     const match = await bcrypt.compare(otp, user.otpCode);
     if (!match) return res.status(401).json({ message: "Invalid OTP" });
 
-    // ניקוי OTP לאחר שימוש
     user.otpCode = null;
     user.otpExpires = null;
     await user.save();

@@ -72,8 +72,8 @@ router.post("/upload", upload.single("file"), async (req, res) => {
   algorithm,
   ivB64,
   wrappedKeyB64,
-  encryptedMetaB64,   // ← חדש
-  metaIvB64,          // ← חדש
+  encryptedMetaB64,   
+  metaIvB64,          
 });
 
     res.json({ id: doc._id });
@@ -122,5 +122,24 @@ router.get("/:id/download", async (req, res) => {
     res.status(500).json({ error: "Download failed" });
   }
 });
+router.delete("/:id", async (req, res) => {
+  try {
+    const doc = await File.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!doc) return res.status(404).json({ error: "File not found" });
+
+    const filePath = path.join(uploadDir, doc.storedName);
+    if (fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch {}
+    }
+
+    await doc.deleteOne();
+    res.json({ message: "Deleted successfully" });
+  } catch (e) {
+    console.error("Delete failed:", e);
+    res.status(500).json({ error: "Delete failed" });
+  }
+});
+
+
 
 export default router;

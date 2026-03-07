@@ -13,8 +13,6 @@ export async function decryptMeta({ wrappedKeyB64, encryptedMetaB64, metaIvB64 }
   return JSON.parse(new TextDecoder().decode(new Uint8Array(metaPlainBuf)));
 }
 
-
-
 function bytesToBase64(bytes) {
   let binary = "";
   const chunkSize = 0x8000;
@@ -51,24 +49,19 @@ export async function getOrCreateMasterKey() {
 }
 
 export async function encryptFileWithWrappedKey(file) {
-  // 1) Per-file data key for AES-GCM
   const dataKey = await crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
     true,
     ["encrypt", "decrypt"]
   );
-
-  // 2) Wrap data key with master key (AES-KW)
   const masterKey = await getOrCreateMasterKey();
   const wrappedKeyBuf = await crypto.subtle.wrapKey("raw", dataKey, masterKey, "AES-KW");
   const wrappedKeyB64 = bytesToBase64(new Uint8Array(wrappedKeyBuf));
 
-  // 3) Encrypt file bytes (ciphertext includes authTag internally in WebCrypto result)
   const plainBuf = await file.arrayBuffer();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dataKey, plainBuf);
 
-  // 4) Encrypt metadata too (zero-knowledge metadata)
   const metaPlain = {
     originalName: file.name,
     originalMimeType: file.type || "application/octet-stream",
@@ -86,21 +79,16 @@ return {
     ivB64: bytesToBase64(iv),
     wrappedKeyB64,
     ciphertextSha256B64,
-    encryptedMetaB64: bytesToBase64(new Uint8Array(metaCipherBuf)), // שם אחיד
-    metaIvB64: bytesToBase64(metaIv),                              // שם אחיד
+    encryptedMetaB64: bytesToBase64(new Uint8Array(metaCipherBuf)), 
+    metaIvB64: bytesToBase64(metaIv),                              
   },
 };
 
 }
 
-/**
- * Decrypts ciphertext and also decrypts encrypted metadata.
- * Returns { blob, metaPlain }
- */
 export async function decryptPackage({ ciphertextArrayBuffer, meta }) {
   const masterKey = await getOrCreateMasterKey();
 
-  // unwrap dataKey
   const wrappedKeyBytes = base64ToBytes(meta.wrappedKeyB64);
   const dataKey = await crypto.subtle.unwrapKey(
     "raw",
@@ -112,11 +100,9 @@ export async function decryptPackage({ ciphertextArrayBuffer, meta }) {
     ["decrypt"]
   );
 
-  // decrypt file
   const iv = base64ToBytes(meta.ivB64);
   const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, dataKey, ciphertextArrayBuffer);
 
-  // decrypt metadata
   const metaIv = base64ToBytes(meta.metaIvB64);
   const metaCipherBytes = base64ToBytes(meta.encryptedMetaB64);
   const metaPlainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: metaIv }, dataKey, metaCipherBytes.buffer);
