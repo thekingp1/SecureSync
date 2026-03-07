@@ -136,13 +136,23 @@ export default function App() {
 }
 
 
-  function onLogout() {
-    clearToken();
-    setFiles([]);
-    setSelected(null);
-    setStage("login");
-    setStatus("Logged out.");
+ async function onLogout() {
+  const token = getToken();
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/users/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
   }
+  clearToken();
+  setFiles([]);
+  setSelected(null);
+  setStage("login");
+  setStatus("Logged out.");
+}
+
 
   async function onUpload() {
     const token = getToken();

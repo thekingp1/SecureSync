@@ -3,6 +3,9 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import User from "../models/User.model.js";
+import crypto from "crypto";
+import Session from "../models/Session.js";
+
 console.log("EMAIL_HOST:", process.env.EMAIL_HOST);
 
 const transporter = nodemailer.createTransport({
@@ -70,11 +73,13 @@ export async function verifyOtp(req, res) {
     const { email, otp } = req.body;
     if (!email || !otp)
       return res.status(400).json({ message: "Missing fields" });
+
     const user = await User.findOne({ email });
     if (!user || !user.otpCode || !user.otpExpires)
       return res.status(401).json({ message: "No OTP requested" });
     if (new Date() > user.otpExpires)
       return res.status(401).json({ message: "OTP expired" });
+
     const match = await bcrypt.compare(otp, user.otpCode);
     if (!match) return res.status(401).json({ message: "Invalid OTP" });
 
@@ -82,14 +87,47 @@ export async function verifyOtp(req, res) {
     user.otpExpires = null;
     await user.save();
 
+    const jti = crypto.randomBytes(16).toString("hex");
+    const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8h
+
     const token = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user._id, email: user.email, jti },
       process.env.JWT_SECRET || "dev_secret",
       { expiresIn: "8h" }
     );
+
+    await Session.create({
+      userId: user._id,
+      jti,
+      expiresAt,
+      ip:        req.headers["x-forwarded-for"] || req.ip || null,
+      userAgent: req.headers["user-agent"] || null,
+    });
+
     res.json({ token });
   } catch (e) {
     console.error("VerifyOtp error:", e);
     res.status(500).json({ message: "Server error" });
   }
 }
+export async function logout(req, res) {
+  try {
+    const header = req.headers.authorization || "";
+    const [, token] = header.split(" ");
+    if (!token) return res.status(400).json({ message: "Missing token" });
+
+    const decoded = jwt.decode(token);
+    if (!decoded?.jti) return res.status(400).json({ message: "Invalid token" });
+
+    await Session.findOneAndUpdate(
+      { jti: decoded.jti },
+      { revokedAt: new Date() }
+    );
+
+    res.json({ message: "Logged out successfully" });
+  } catch (e) {
+    console.error("Logout error:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+}
+
