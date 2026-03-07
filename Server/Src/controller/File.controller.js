@@ -1,4 +1,6 @@
 import {File} from ("../models/File");
+import { logAudit } from "../utils/audit.js";
+
 const deleteFile = async(req, res)=>{
     try {
         const {id} = req.params;
@@ -14,4 +16,5 @@ const deleteFile = async(req, res)=>{
         res.status(500).send({message: "error deleting file", isSuccess: false});
     }
 };
+
 export {deleteFile};
