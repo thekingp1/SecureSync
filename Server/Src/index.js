@@ -5,6 +5,9 @@ import mongoose from "mongoose";
 import filesRouter from "./routes/files.js";
 import userRoutes from "./routes/User.routes.js";
 import { authRequired } from "./middlewares/auth.js";
+import permissionRouter from "./routes/permission.routes.js";
+
+
 dotenv.config();
 
 const app = express();
@@ -13,6 +16,7 @@ app.use(express.json());
 
 app.use("/files", authRequired, filesRouter);
 app.use("/users", userRoutes);
+app.use("/files", authRequired, permissionRouter);
 
 const PORT = process.env.PORT || 4000;
 

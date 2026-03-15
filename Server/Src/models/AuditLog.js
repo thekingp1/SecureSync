@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const auditLogSchema = new mongoose.Schema(
   {
     userId:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    action:     { type: String, enum: ["upload", "download", "delete", "list", "login", "verify_otp"], required: true },
+    action:     { type: String, enum: ["upload", "download", "delete", "list", "login", "verify_otp", "share", "revoke"], required: true },
     fileId:     { type: mongoose.Schema.Types.ObjectId, ref: "File", default: null },
     ip:         { type: String, default: null },
     userAgent:  { type: String, default: null },

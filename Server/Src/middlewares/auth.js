@@ -9,10 +9,8 @@ export async function authRequired(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
-    console.log("AUTH - payload:", payload);
 
     const session = await Session.findOne({ jti: payload.jti });
-    console.log("AUTH - session:", session);
     
     if (!session)
       return res.status(401).json({ message: "Session not found" });

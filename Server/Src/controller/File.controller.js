@@ -3,6 +3,9 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import File from "../models/File.js";
+import { hasPermission } from "../utils/permissions.js";
+import Permission from "../models/Permission.js";
+
 import { logAudit } from "../utils/audit.js";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
@@ -70,9 +73,25 @@ export async function uploadFile(req, res) {
 
 export async function listFiles(req, res) {
   try {
-    const files = await File.find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(50);
+    // קבצים של המשתמש עצמו
+    const ownFiles = await File.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    // קבצים ששותפו איתו
+    const sharedPerms = await Permission.find({
+      grantedTo: req.user.id,
+      revokedAt: null,
+      riskOverride: false,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+    }).populate("fileId");
+
+    const sharedFiles = sharedPerms
+      .filter((p) => p.fileId)
+      .map((p) => ({ ...p.fileId.toObject(), sharedAs: p.role }));
+
     await logAudit({ userId: req.user.id, action: "list", outcome: "success", req });
-    res.json(files);
+    res.json([...ownFiles, ...sharedFiles]);
   } catch (e) {
     console.error("List files failed:", e);
     await logAudit({ userId: req.user.id, action: "list", outcome: "failure", req, detail: e.message });
@@ -80,12 +99,19 @@ export async function listFiles(req, res) {
   }
 }
 
+
 export async function downloadFile(req, res) {
   try {
-    const doc = await File.findOne({ _id: req.params.id, userId: req.user.id });
+    let doc = await File.findOne({ _id: req.params.id, userId: req.user.id });
+
+    // אם לא הבעלים – בדוק הרשאה
     if (!doc) {
-      await logAudit({ userId: req.user.id, action: "download", outcome: "failure", req, fileId: req.params.id, detail: "File not found" });
-      return res.status(404).json({ error: "File not found" });
+      const allowed = await hasPermission(req.params.id, req.user.id, "read");
+      if (!allowed) {
+        await logAudit({ userId: req.user.id, action: "download", outcome: "failure", req, fileId: req.params.id, detail: "No permission" });
+        return res.status(403).json({ error: "Access denied" });
+      }
+      doc = await File.findById(req.params.id);
     }
 
     const filePath = path.join(uploadDir, doc.storedName);
@@ -113,12 +139,18 @@ export async function downloadFile(req, res) {
   }
 }
 
+
 export async function deleteFile(req, res) {
   try {
-    const doc = await File.findOne({ _id: req.params.id, userId: req.user.id });
+    let doc = await File.findOne({ _id: req.params.id, userId: req.user.id });
+
     if (!doc) {
-      await logAudit({ userId: req.user.id, action: "delete", outcome: "failure", req, fileId: req.params.id, detail: "File not found" });
-      return res.status(404).json({ error: "File not found" });
+      const allowed = await hasPermission(req.params.id, req.user.id, "admin");
+      if (!allowed) {
+        await logAudit({ userId: req.user.id, action: "delete", outcome: "failure", req, fileId: req.params.id, detail: "No permission" });
+        return res.status(403).json({ error: "Access denied" });
+      }
+      doc = await File.findById(req.params.id);
     }
 
     const filePath = path.join(uploadDir, doc.storedName);
@@ -127,6 +159,7 @@ export async function deleteFile(req, res) {
     }
 
     await doc.deleteOne();
+    await Permission.deleteMany({ fileId: doc._id }); // נקה הרשאות של הקובץ
     await logAudit({ userId: req.user.id, action: "delete", outcome: "success", req, fileId: doc._id });
     res.json({ message: "Deleted successfully" });
   } catch (e) {
@@ -135,3 +168,4 @@ export async function deleteFile(req, res) {
     res.status(500).json({ error: "Delete failed" });
   }
 }
+

@@ -23,16 +23,16 @@ function decodeMetaFromHeader(metaHeader) {
 
 export default function App() {
   const [stage, setStage] = useState("login");
-
   const [email, setEmail] = useState("");
-  const [name, setName] = useState(""); 
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
-
   const [selected, setSelected] = useState(null);
   const [files, setFiles] = useState([]);
-
   const [status, setStatus] = useState("");
+  const [shareTarget, setShareTarget] = useState(null);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState("read");
 
   function getToken() {
     return localStorage.getItem("securesync_token");
@@ -50,34 +50,34 @@ export default function App() {
   }, []);
 
   async function refreshFiles() {
-  const token = getToken();
-  if (!token) throw new Error("Missing token");
-  const res = await fetch(`${API_BASE}/files`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 401) {
-    clearToken();
-    setStage("login");
-    throw new Error("Session expired. Please login again.");
+    const token = getToken();
+    if (!token) throw new Error("Missing token");
+    const res = await fetch(`${API_BASE}/files`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      clearToken();
+      setStage("login");
+      throw new Error("Session expired. Please login again.");
+    }
+    if (!res.ok) throw new Error(await res.text());
+    const rawFiles = await res.json();
+    const filesWithNames = await Promise.all(
+      rawFiles.map(async (f) => {
+        try {
+          const meta = await decryptMeta({
+            wrappedKeyB64: f.wrappedKeyB64,
+            encryptedMetaB64: f.encryptedMetaB64,
+            metaIvB64: f.metaIvB64,
+          });
+          return { ...f, originalName: meta.originalName };
+        } catch {
+          return { ...f, originalName: null };
+        }
+      })
+    );
+    setFiles(filesWithNames);
   }
-  if (!res.ok) throw new Error(await res.text());
-  const rawFiles = await res.json();
-  const filesWithNames = await Promise.all(
-    rawFiles.map(async (f) => {
-      try {
-        const meta = await decryptMeta({
-          wrappedKeyB64: f.wrappedKeyB64,
-          encryptedMetaB64: f.encryptedMetaB64,
-          metaIvB64: f.metaIvB64,
-        });
-        return { ...f, originalName: meta.originalName };
-      } catch {
-        return { ...f, originalName: null };
-      }
-    })
-  );
-  setFiles(filesWithNames);
-}
 
   useEffect(() => {
     if (stage !== "files") return;
@@ -90,23 +90,19 @@ export default function App() {
       setStatus("Register requires: email, name, password");
       return;
     }
-
     const res = await fetch(`${API_BASE}/users/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, name, password }),
     });
-
     if (!res.ok) {
-      const err = await res.text();
-      setStatus(`Register failed: ${err}`);
+      setStatus(`Register failed: ${await res.text()}`);
       return;
     }
-
     setStatus("Registered successfully. Now click Login.");
   }
 
- async function onLogin() {
+  async function onLogin() {
     setStatus("");
     if (!email || !password) {
       setStatus("Login requires: email, password");
@@ -121,82 +117,65 @@ export default function App() {
     setStatus("Verification code sent to your email.");
     setStage("verify");
   }
+
   async function onVerifyOtp() {
-  if (!otp) { setStatus("הכנס קוד"); return; }
-  const res = await fetch(`${API_BASE}/users/verify-otp`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, otp }),
-  });
-  if (!res.ok) { setStatus(`שגיאה: ${await res.text()}`); return; }
-  const data = await res.json();
-  if (!data.token) { setStatus("No token"); return; }
-  setToken(data.token);
-  setOtp("");
-  setStage("files");
-}
-
-
- async function onLogout() {
-  const token = getToken();
-  if (token) {
-    try {
-      await fetch(`${API_BASE}/users/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {}
+    if (!otp) { setStatus("הכנס קוד"); return; }
+    const res = await fetch(`${API_BASE}/users/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp }),
+    });
+    if (!res.ok) { setStatus(`שגיאה: ${await res.text()}`); return; }
+    const data = await res.json();
+    if (!data.token) { setStatus("No token"); return; }
+    setToken(data.token);
+    setOtp("");
+    setStage("files");
   }
-  clearToken();
-  setFiles([]);
-  setSelected(null);
-  setStage("login");
-  setStatus("Logged out.");
-}
 
+  async function onLogout() {
+    const token = getToken();
+    if (token) {
+      try {
+        await fetch(`${API_BASE}/users/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {}
+    }
+    clearToken();
+    setFiles([]);
+    setSelected(null);
+    setStage("login");
+    setStatus("Logged out.");
+  }
 
   async function onUpload() {
     const token = getToken();
-    if (!token) {
-      setStatus("Not authenticated.");
-      return;
-    }
+    if (!token) { setStatus("Not authenticated."); return; }
     if (!selected) return;
-
     setStatus("Encrypting on client...");
     const { ciphertext, meta } = await encryptFileWithWrappedKey(selected);
-
     setStatus("Uploading ciphertext...");
     const form = new FormData();
-
-    const encryptedName = `${selected.name}.enc`;
-    form.append("file", ciphertext, encryptedName);
-
+    form.append("file", ciphertext, `${selected.name}.enc`);
     form.append("algorithm", meta.algorithm);
     form.append("ivB64", meta.ivB64);
     form.append("wrappedKeyB64", meta.wrappedKeyB64);
     form.append("ciphertextSha256B64", meta.ciphertextSha256B64);
-
     form.append("encryptedMetaB64", meta.encryptedMetaB64);
-    form.append("metaIvB64",        meta.metaIvB64);
+    form.append("metaIvB64", meta.metaIvB64);
     const res = await fetch(`${API_BASE}/files/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
-
     if (res.status === 401) {
-      clearToken();
-      setStage("login");
+      clearToken(); setStage("login");
       setStatus("Session expired. Please login again.");
       return;
     }
-
-    if (!res.ok) {
-      const err = await res.text();
-      setStatus(`Upload failed: ${err}`);
-      return;
-    }
-
+    if (!res.ok) { setStatus(`Upload failed: ${await res.text()}`); return; }
     setStatus("Uploaded. Refreshing list...");
     await refreshFiles();
     setStatus("Done.");
@@ -205,73 +184,63 @@ export default function App() {
 
   async function onDownloadDecrypt(fileId) {
     const token = getToken();
-    if (!token) {
-      setStatus("Not authenticated.");
-      return;
-    }
-
+    if (!token) { setStatus("Not authenticated."); return; }
     setStatus("Downloading ciphertext + metadata...");
     const res = await fetch(`${API_BASE}/files/${fileId}/download`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-
     if (res.status === 401) {
-      clearToken();
-      setStage("login");
+      clearToken(); setStage("login");
       setStatus("Session expired. Please login again.");
       return;
     }
-
-    if (!res.ok) {
-      const err = await res.text();
-      setStatus(`Download failed: ${err}`);
-      return;
-    }
-
+    if (!res.ok) { setStatus(`Download failed: ${await res.text()}`); return; }
     const metaHeader = res.headers.get("x-securesync-meta");
-    if (!metaHeader) {
-      setStatus("Missing x-securesync-meta header");
-      return;
-    }
-
+    if (!metaHeader) { setStatus("Missing x-securesync-meta header"); return; }
     const meta = decodeMetaFromHeader(metaHeader);
     const cipherBuf = await res.arrayBuffer();
-
     setStatus("Decrypting on client...");
     try {
-     const { blob, metaPlain } = await decryptPackage({
-  ciphertextArrayBuffer: cipherBuf,
-  meta,
-});
-downloadBlob(blob, metaPlain.originalName || "download.bin");
+      const { blob, metaPlain } = await decryptPackage({ ciphertextArrayBuffer: cipherBuf, meta });
+      downloadBlob(blob, metaPlain.originalName || "download.bin");
       setStatus("Decrypted and downloaded.");
     } catch (e) {
       setStatus(`Decrypt failed: ${String(e)}`);
     }
   }
+
   async function onDelete(fileId) {
-  if (!window.confirm("למחוק את הקובץ לצמיתות?")) return;
-  const token = getToken();
-  if (!token) { setStatus("Not authenticated."); return; }
-
-  const res = await fetch(`${API_BASE}/files/${fileId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (res.status === 401) {
-    clearToken(); setStage("login");
-    setStatus("Session expired. Please login again.");
-    return;
-  }
-  if (!res.ok) {
-    setStatus(`Delete failed: ${await res.text()}`);
-    return;
+    if (!window.confirm("למחוק את הקובץ לצמיתות?")) return;
+    const token = getToken();
+    if (!token) { setStatus("Not authenticated."); return; }
+    const res = await fetch(`${API_BASE}/files/${fileId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      clearToken(); setStage("login");
+      setStatus("Session expired. Please login again.");
+      return;
+    }
+    if (!res.ok) { setStatus(`Delete failed: ${await res.text()}`); return; }
+    setFiles((prev) => prev.filter((f) => f._id !== fileId));
+    setStatus("File deleted.");
   }
 
-  setFiles((prev) => prev.filter((f) => f._id !== fileId));
-  setStatus("File deleted.");
-}
+  async function onShare(fileId) {
+    if (!shareEmail) { setStatus("הכנס אימייל"); return; }
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/files/${fileId}/share`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: shareEmail, role: shareRole }),
+    });
+    if (!res.ok) { setStatus(`שיתוף נכשל: ${await res.text()}`); return; }
+    setStatus(`הקובץ שותף עם ${shareEmail} בתור ${shareRole}`);
+    setShareTarget(null);
+    setShareEmail("");
+    setShareRole("read");
+  }
 
   if (stage === "login") {
     return (
@@ -303,78 +272,56 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
   }
 
   if (stage === "verify") {
-  return (
-    <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
-      <h2>SecureSync – אימות דו-שלבי</h2>
-      <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-        <p>נשלח קוד בן 4 ספרות לכתובת <strong>{email}</strong></p>
-        <label style={{ display: "block", marginBottom: 6 }}>קוד אימות</label>
-        <input
-          value={otp}
-          onChange={(e) => setOtp(e.target.value)}
-          maxLength={4}
-          inputMode="numeric"
-          placeholder="1234"
-          style={{ width: "100%", padding: 12, fontSize: 24, textAlign: "center", letterSpacing: 8, marginBottom: 12 }}
-          onKeyDown={(e) => e.key === "Enter" && onVerifyOtp()}
-          autoFocus
-        />
-        <button onClick={onVerifyOtp} style={{ width: "100%", padding: "10px", fontSize: 16 }}>
-          אמת
-        </button>
-        <button
-          onClick={() => { setStage("login"); setOtp(""); setStatus(""); }}
-          style={{ width: "100%", padding: "8px", marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#666" }}
-        >
-          חזרה
-        </button>
-        <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+    return (
+      <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
+        <h2>SecureSync – אימות דו-שלבי</h2>
+        <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+          <p>נשלח קוד בן 4 ספרות לכתובת <strong>{email}</strong></p>
+          <label style={{ display: "block", marginBottom: 6 }}>קוד אימות</label>
+          <input
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            maxLength={4}
+            inputMode="numeric"
+            placeholder="1234"
+            style={{ width: "100%", padding: 12, fontSize: 24, textAlign: "center", letterSpacing: 8, marginBottom: 12 }}
+            onKeyDown={(e) => e.key === "Enter" && onVerifyOtp()}
+            autoFocus
+          />
+          <button onClick={onVerifyOtp} style={{ width: "100%", padding: "10px", fontSize: 16 }}>אמת</button>
+          <button
+            onClick={() => { setStage("login"); setOtp(""); setStatus(""); }}
+            style={{ width: "100%", padding: "8px", marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#666" }}
+          >
+            חזרה
+          </button>
+          <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
     <div style={{ maxWidth: 900, margin: "30px auto", fontFamily: "Arial" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>SecureSync – Encrypted Files</h2>
-        <button onClick={onLogout} style={{ padding: "8px 12px" }}>
-          Logout
-        </button>
+        <button onClick={onLogout} style={{ padding: "8px 12px" }}>Logout</button>
       </div>
 
       <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-        <input
-          type="file"
-          onChange={(e) => setSelected(e.target.files?.[0] || null)}
-        />
-        <button onClick={onUpload} style={{ marginLeft: 10 }}>
-          Encrypt + Upload
-        </button>
-        <button
-          onClick={() => refreshFiles().catch((e) => setStatus(String(e)))}
-          style={{ marginLeft: 10 }}
-        >
+        <input type="file" onChange={(e) => setSelected(e.target.files?.[0] || null)} />
+        <button onClick={onUpload} style={{ marginLeft: 10 }}>Encrypt + Upload</button>
+        <button onClick={() => refreshFiles().catch((e) => setStatus(String(e)))} style={{ marginLeft: 10 }}>
           Refresh
         </button>
-
-        <div style={{ marginTop: 10, color: "#444", whiteSpace: "pre-wrap" }}>
-          {status}
-        </div>
+        <div style={{ marginTop: 10, color: "#444", whiteSpace: "pre-wrap" }}>{status}</div>
       </div>
 
       <h3 style={{ marginTop: 24 }}>Uploaded files</h3>
-
       <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-          <th>originalName</th>
+            <th>originalName</th>
             <th>Stored name</th>
             <th>Algorithm</th>
             <th>Created</th>
@@ -392,11 +339,27 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
                 <button onClick={() => onDownloadDecrypt(f._id)}>
                   Download + Decrypt
                 </button>
-                <button onClick={()=> onDelete(f._id)}
-                  style={{color: "#fff", background: "#c00", border: "none", padding: "4px 10px", 
-                  cursor: "pointer", borderRadius: 4}}>
+                {!f.sharedAs && (
+                  <button
+                    onClick={() => { setShareTarget(f._id); setShareEmail(""); setShareRole("read"); }}
+                    style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4 }}
+                  >
+                    שתף
+                  </button>
+                )}
+                {!f.sharedAs && (
+                  <button
+                    onClick={() => onDelete(f._id)}
+                    style={{ color: "#fff", background: "#c00", border: "none", padding: "4px 10px", cursor: "pointer", borderRadius: 4, marginLeft: 6 }}
+                  >
                     Delete
                   </button>
+                )}
+                {f.sharedAs && (
+                  <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
+                    משותף ({f.sharedAs})
+                  </span>
+                )}
               </td>
             </tr>
           ))}
@@ -407,6 +370,37 @@ downloadBlob(blob, metaPlain.originalName || "download.bin");
           )}
         </tbody>
       </table>
+
+      {shareTarget && (
+        <div style={{ marginTop: 20, padding: 16, border: "1px solid #aad", borderRadius: 8, background: "#000002" }}>
+          <strong> share file</strong>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              placeholder="אימייל המשתמש"
+              value={shareEmail}
+              onChange={(e) => setShareEmail(e.target.value)}
+              style={{ padding: 8, flex: 1, minWidth: 200 }}
+            />
+            <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} style={{ padding: 8 }}>
+              <option value="read">read only</option>
+              <option value="write">read + write</option>
+              <option value="admin">admin</option>
+            </select>
+            <button
+              onClick={() => onShare(shareTarget)}
+              style={{ padding: "8px 16px", background: "#4472C4", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+            >
+              share
+            </button>
+            <button
+              onClick={() => setShareTarget(null)}
+              style={{ padding: "8px 12px", background: "#000000", border: "1px solid #000000", borderRadius: 4, cursor: "pointer" }}
+            >
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
