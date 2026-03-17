@@ -1,11 +1,10 @@
-import { Router } from "express";
-import { authRequired } from "../middlewares/auth.js";
 import File from "../models/File.js";
 import User from "../models/User.model.js";
 import Permission from "../models/Permission.js";
 import { logAudit } from "../utils/audit.js";
+import { sendToUser } from "../utils/websocket.js";
 
-const router = Router();
+
 
 
 export async function shareFile(req, res){
@@ -44,8 +43,14 @@ export async function shareFile(req, res){
       });
     }
 
+    sendToUser(String(target._id), {
+      type: "file_shared",
+      message: `קובץ שותף איתך בתור ${role}`,
+      fileId: String(file._id),
+    });
     await logAudit({ userId: req.user.id, action: "share", outcome: "success", req, fileId: file._id });
     res.json({ message: `Shared with ${email} as ${role}` });
+
   } catch (e) {
     console.error("Share failed:", e);
     res.status(500).json({ error: "Share failed" });
@@ -92,4 +97,20 @@ export async function getPermissions(req, res) {
   }
 };
 
-export default router;
+export async function leaveShared(req, res) {
+  try {
+    const perm = await Permission.findOne({
+      fileId: req.params.id,
+      grantedTo: req.user.id,
+      revokedAt: null,
+    });
+    if (!perm) return res.status(404).json({ error: "Permission not found" });
+    perm.revokedAt = new Date();
+    await perm.save();
+    res.json({ message: "Left shared file" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to leave" });
+  }
+}
+
+
