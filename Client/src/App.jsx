@@ -1,524 +1,149 @@
-import { useEffect, useState } from "react";
-import { encryptFileWithWrappedKey, decryptPackage, decryptMeta } from "./crypto/crypto.js";
-
-const API_BASE = "http://localhost:4000";
-
-
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function decodeMetaFromHeader(metaHeader) {
-  let b64 = metaHeader.trim().replace(/-/g, "+").replace(/_/g, "/");
-  while (b64.length % 4 !== 0) b64 += "=";
-  const json = atob(b64);
-  return JSON.parse(json);
-}
+import { useApp } from "./hooks/useApp.js";
 
 export default function App() {
-  const [stage, setStage] = useState("login");
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
-  const [otp, setOtp] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [files, setFiles] = useState([]);
-  const [status, setStatus] = useState("");
-  const [shareTarget, setShareTarget] = useState(null);
-  const [shareEmail, setShareEmail] = useState("");
-  const [shareRole, setShareRole] = useState("read");
+  const {
+    stage, email, setEmail, name, setName, password, setPassword,
+    otp, setOtp, selected, setSelected, files, status,
+    shareTarget, setShareTarget, shareEmail, setShareEmail, shareRole, setShareRole,
+    versionTarget, setVersionTarget, versionSelected, setVersionSelected,
+    notifications, setNotifications,
+    refreshFiles, onRegister, onLogin, onVerifyOtp, onLogout,
+    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,
+  } = useApp();
 
-  const [versionTarget, setVersionTarget] = useState(null);
-  const [versionSelected, setVersionSelected] = useState(null);
-
-  const [notifications, setNotifications] = useState([]);
-
-
-async function onLeaveShared(fileId) {
-  const token = getToken();
-  await fetch(`${API_BASE}/files/${fileId}/leave`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  setFiles((prev) => prev.filter((f) => f._id !== fileId));
-}
-
-
-  function getToken() {
-    return localStorage.getItem("securesync_token");
-  }
-  function setToken(token) {
-    localStorage.setItem("securesync_token", token);
-  }
-  function clearToken() {
-    localStorage.removeItem("securesync_token");
-  }
-
-  useEffect(() => {
-    const t = getToken();
-    if (t) setStage("files");
-  }, []);
-
-  async function refreshFiles() {
-    const token = getToken();
-    if (!token) throw new Error("Missing token");
-    const res = await fetch(`${API_BASE}/files`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401) {
-      clearToken();
-      setStage("login");
-      throw new Error("Session expired. Please login again.");
-    }
-    if (!res.ok) throw new Error(await res.text());
-    const rawFiles = await res.json();
-    const filesWithNames = await Promise.all(
-      rawFiles.map(async (f) => {
-        try {
-          const meta = await decryptMeta({
-            wrappedKeyB64: f.wrappedKeyB64,
-            encryptedMetaB64: f.encryptedMetaB64,
-            metaIvB64: f.metaIvB64,
-          });
-          return { ...f, originalName: meta.originalName };
-        } catch {
-          return { ...f, originalName: null };
-        }
-      })
-    );
-    setFiles(filesWithNames);
-  }
-
-  useEffect(() => {
-    if (stage !== "files") return;
-    refreshFiles().catch((e) => setStatus(`Failed to load files: ${String(e)}`));
-  }, [stage]);
-  useEffect(() => {
-  if (stage !== "files") return;
-  const token = getToken();
-  if (!token) return;
-
-  const ws = new WebSocket(`ws://localhost:4000?token=${token}`);
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    setNotifications((prev) => [data, ...prev]);
-    if (data.type === "file_shared") {
-      refreshFiles();
-    }
-  };
-
-  ws.onerror = () => console.log("WS error");
-
-  return () => ws.close(); // סגור בעת יציאה מהדף
-}, [stage]);
-
-
-  async function onRegister() {
-    setStatus("");
-    if (!email || !name || !password) {
-      setStatus("Register requires: email, name, password");
-      return;
-    }
-    const res = await fetch(`${API_BASE}/users/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, name, password }),
-    });
-    if (!res.ok) {
-      setStatus(`Register failed: ${await res.text()}`);
-      return;
-    }
-    setStatus("Registered successfully. Now click Login.");
-  }
-
-  async function onLogin() {
-    setStatus("");
-    if (!email || !password) {
-      setStatus("Login requires: email, password");
-      return;
-    }
-    const res = await fetch(`${API_BASE}/users/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) { setStatus(`Login failed: ${await res.text()}`); return; }
-    setStatus("Verification code sent to your email.");
-    setStage("verify");
-  }
-
-  async function onVerifyOtp() {
-    if (!otp) { setStatus("הכנס קוד"); return; }
-    const res = await fetch(`${API_BASE}/users/verify-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp }),
-    });
-    if (!res.ok) { setStatus(`שגיאה: ${await res.text()}`); return; }
-    const data = await res.json();
-    if (!data.token) { setStatus("No token"); return; }
-    setToken(data.token);
-    setOtp("");
-    setStage("files");
-  }
-
-  async function onLogout() {
-    const token = getToken();
-    if (token) {
-      try {
-        await fetch(`${API_BASE}/users/logout`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch {}
-    }
-    clearToken();
-    setFiles([]);
-    setSelected(null);
-    setStage("login");
-    setStatus("Logged out.");
-  }
-
-  async function onUpload() {
-    const token = getToken();
-    if (!token) { setStatus("Not authenticated."); return; }
-    if (!selected) return;
-    setStatus("Encrypting on client...");
-    const { ciphertext, meta } = await encryptFileWithWrappedKey(selected);
-    setStatus("Uploading ciphertext...");
-    const form = new FormData();
-    form.append("file", ciphertext, `${selected.name}.enc`);
-    form.append("algorithm", meta.algorithm);
-    form.append("ivB64", meta.ivB64);
-    form.append("wrappedKeyB64", meta.wrappedKeyB64);
-    form.append("ciphertextSha256B64", meta.ciphertextSha256B64);
-    form.append("encryptedMetaB64", meta.encryptedMetaB64);
-    form.append("metaIvB64", meta.metaIvB64);
-    const res = await fetch(`${API_BASE}/files/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
-    });
-    if (res.status === 401) {
-      clearToken(); setStage("login");
-      setStatus("Session expired. Please login again.");
-      return;
-    }
-    if (!res.ok) { setStatus(`Upload failed: ${await res.text()}`); return; }
-    setStatus("Uploaded. Refreshing list...");
-    await refreshFiles();
-    setStatus("Done.");
-    setSelected(null);
-  }
-
-  async function onDownloadDecrypt(fileId) {
-    const token = getToken();
-    if (!token) { setStatus("Not authenticated."); return; }
-    setStatus("Downloading ciphertext + metadata...");
-    const res = await fetch(`${API_BASE}/files/${fileId}/download`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401) {
-      clearToken(); setStage("login");
-      setStatus("Session expired. Please login again.");
-      return;
-    }
-    if (!res.ok) { setStatus(`Download failed: ${await res.text()}`); return; }
-    const metaHeader = res.headers.get("x-securesync-meta");
-    if (!metaHeader) { setStatus("Missing x-securesync-meta header"); return; }
-    const meta = decodeMetaFromHeader(metaHeader);
-    const cipherBuf = await res.arrayBuffer();
-    setStatus("Decrypting on client...");
-    try {
-      const { blob, metaPlain } = await decryptPackage({ ciphertextArrayBuffer: cipherBuf, meta });
-      downloadBlob(blob, metaPlain.originalName || "download.bin");
-      setStatus("Decrypted and downloaded.");
-    } catch (e) {
-      setStatus(`Decrypt failed: ${String(e)}`);
-    }
-  }
-
-  async function onDelete(fileId) {
-    if (!window.confirm("למחוק את הקובץ לצמיתות?")) return;
-    const token = getToken();
-    if (!token) { setStatus("Not authenticated."); return; }
-    const res = await fetch(`${API_BASE}/files/${fileId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401) {
-      clearToken(); setStage("login");
-      setStatus("Session expired. Please login again.");
-      return;
-    }
-    if (!res.ok) { setStatus(`Delete failed: ${await res.text()}`); return; }
-    setFiles((prev) => prev.filter((f) => f._id !== fileId));
-    setStatus("File deleted.");
-  }
-  async function onUploadVersion(fileId) {
-  if (!versionSelected) { setStatus("בחר קובץ"); return; }
-  const token = getToken();
-  setStatus("Encrypting...");
-  const { ciphertext, meta } = await encryptFileWithWrappedKey(versionSelected);
-  const form = new FormData();
-  form.append("file", ciphertext, `${versionSelected.name}.enc`);
-  form.append("algorithm", meta.algorithm);
-  form.append("ivB64", meta.ivB64);
-  form.append("wrappedKeyB64", meta.wrappedKeyB64);
-  form.append("ciphertextSha256B64", meta.ciphertextSha256B64);
-  form.append("encryptedMetaB64", meta.encryptedMetaB64);
-  form.append("metaIvB64", meta.metaIvB64);
-  const res = await fetch(`${API_BASE}/files/${fileId}/versions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
-  if (!res.ok) { setStatus(`שגיאה: ${await res.text()}`); return; }
-  setStatus("new version uploaded");
-  setVersionTarget(null);
-  setVersionSelected(null);
-  await refreshFiles();
-}
-  async function onShare(fileId) {
-    if (!shareEmail) { setStatus("הכנס אימייל"); return; }
-    const token = getToken();
-    const res = await fetch(`${API_BASE}/files/${fileId}/share`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: shareEmail, role: shareRole }),
-    });
-    if (!res.ok) { setStatus(`שיתוף נכשל: ${await res.text()}`); return; }
-    setStatus(`הקובץ שותף עם ${shareEmail} בתור ${shareRole}`);
-    setShareTarget(null);
-    setShareEmail("");
-    setShareRole("read");
-  }
-
-  if (stage === "login") {
-    return (
-      <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
-        <h2>SecureSync</h2>
-        <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-          <div style={{ marginBottom: 8 }}>
-            <label>Email</label><br />
-            <input value={email} onChange={(e) => setEmail(e.target.value)}
-              style={{ width: "100%", padding: 8 }} />
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <label>Name (register only)</label><br />
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              style={{ width: "100%", padding: 8 }} />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label>Password</label><br />
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              style={{ width: "100%", padding: 8 }}
-              onKeyDown={(e) => e.key === "Enter" && onLogin()} />
-          </div>
-          <button onClick={onLogin} style={{ width: "100%", padding: "10px", marginBottom: 8 }}>Login</button>
-          <button onClick={onRegister} style={{ width: "100%", padding: "10px", background: "none", border: "1px solid #aaa" }}>Register</button>
-          <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+  if (stage === "login") return (
+    <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
+      <h2>SecureSync</h2>
+      <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+        <div style={{ marginBottom: 8 }}>
+          <label>Email</label><br />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", padding: 8 }} />
         </div>
-      </div>
-    );
-  }
-
-  if (stage === "verify") {
-    return (
-      <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
-        <h2>SecureSync – אימות דו-שלבי</h2>
-        <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-          <p>נשלח קוד בן 4 ספרות לכתובת <strong>{email}</strong></p>
-          <label style={{ display: "block", marginBottom: 6 }}>קוד אימות</label>
-          <input
-            value={otp}
-            onChange={(e) => setOtp(e.target.value)}
-            maxLength={4}
-            inputMode="numeric"
-            placeholder="1234"
-            style={{ width: "100%", padding: 12, fontSize: 24, textAlign: "center", letterSpacing: 8, marginBottom: 12 }}
-            onKeyDown={(e) => e.key === "Enter" && onVerifyOtp()}
-            autoFocus
-          />
-          <button onClick={onVerifyOtp} style={{ width: "100%", padding: "10px", fontSize: 16 }}>אמת</button>
-          <button
-            onClick={() => { setStage("login"); setOtp(""); setStatus(""); }}
-            style={{ width: "100%", padding: "8px", marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#666" }}
-          >
-            חזרה
-          </button>
-          <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+        <div style={{ marginBottom: 8 }}>
+          <label>Name (register only)</label><br />
+          <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: 8 }} />
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <label>Password</label><br />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            style={{ width: "100%", padding: 8 }} onKeyDown={(e) => e.key === "Enter" && onLogin()} />
+        </div>
+        <button onClick={onLogin} style={{ width: "100%", padding: "10px", marginBottom: 8 }}>Login</button>
+        <button onClick={onRegister} style={{ width: "100%", padding: "10px", background: "none", border: "1px solid #aaa" }}>Register</button>
+        <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
       </div>
-    );
-  }
-
- return (
-  <div style={{ maxWidth: 900, margin: "30px auto", fontFamily: "Arial" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <h2>SecureSync – Encrypted Files</h2>
-      <button onClick={onLogout} style={{ padding: "8px 12px" }}>Logout</button>
     </div>
+  );
 
-    <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-      <input type="file" onChange={(e) => setSelected(e.target.files?.[0] || null)} />
-      <button onClick={onUpload} style={{ marginLeft: 10 }}>Encrypt + Upload</button>
-      <button onClick={() => refreshFiles().catch((e) => setStatus(String(e)))} style={{ marginLeft: 10 }}>
-        Refresh
-      </button>
-      <div style={{ marginTop: 10, color: "#444", whiteSpace: "pre-wrap" }}>{status}</div>
+  if (stage === "verify") return (
+    <div style={{ maxWidth: 400, margin: "60px auto", fontFamily: "Arial" }}>
+      <h2>SecureSync – אימות דו-שלבי</h2>
+      <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+        <p>נשלח קוד בן 4 ספרות לכתובת <strong>{email}</strong></p>
+        <label style={{ display: "block", marginBottom: 6 }}>קוד אימות</label>
+        <input value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={4} inputMode="numeric"
+          placeholder="1234" style={{ width: "100%", padding: 12, fontSize: 24, textAlign: "center", letterSpacing: 8, marginBottom: 12 }}
+          onKeyDown={(e) => e.key === "Enter" && onVerifyOtp()} autoFocus />
+        <button onClick={onVerifyOtp} style={{ width: "100%", padding: "10px", fontSize: 16 }}>אמת</button>
+        <button onClick={() => { setStage("login"); setOtp(""); setStatus(""); }}
+          style={{ width: "100%", padding: "8px", marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#666" }}>
+          חזרה
+        </button>
+        <div style={{ marginTop: 10, color: "#c00" }}>{status}</div>
+      </div>
     </div>
-    {notifications.length > 0 && (
-  <div style={{ marginTop: 16 }}>
-    {notifications.map((n, i) => (
-      <div key={i} style={{ padding: "8px 12px", background: "#e8f5e9", border: "1px solid #000000", borderRadius: 6, marginBottom: 6 }}>
-        🔔 {n.message}
+  );
+
+  return (
+    <div style={{ maxWidth: 900, margin: "30px auto", fontFamily: "Arial" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2>SecureSync – Encrypted Files</h2>
+        <button onClick={onLogout} style={{ padding: "8px 12px" }}>Logout</button>
       </div>
-    ))}
-    <button
-      onClick={() => setNotifications([])}
-      style={{ fontSize: 12, color: "#666", background: "none", border: "none", cursor: "pointer" }}
-    >
-      clear notifications
-    </button>
-  </div>
-)}
-
-    <h3 style={{ marginTop: 24 }}>Uploaded files</h3>
-    <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
-      <thead>
-        <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-          <th>originalName</th>
-          <th>Stored name</th>
-          <th>Algorithm</th>
-          <th>Created</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {files.map((f) => (
-          <tr key={f._id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-            <td>{f.originalName ?? "-"}</td>
-            <td>{f.storedName}</td>
-            <td>{f.algorithm}</td>
-            <td>{f.createdAt ? new Date(f.createdAt).toLocaleString() : ""}</td>
-            <td>
-              <button onClick={() => onDownloadDecrypt(f._id)}>
-                Download + Decrypt
-              </button>
-              {!f.sharedAs && (
-                <button
-                  onClick={() => { setShareTarget(f._id); setShareEmail(""); setShareRole("read"); }}
-                  style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4 }}
-                >
-                  share
-                </button>
-              )}
-              {!f.sharedAs && (
-                <button
-                  onClick={() => { setVersionTarget(f._id); setVersionSelected(null); }}
-                  style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4 }}
-                >
-                   new version
-                </button>
-              )}
-              {!f.sharedAs && (
-                <button
-                  onClick={() => onDelete(f._id)}
-                  style={{ color: "#fff", background: "#c00", border: "none", padding: "4px 10px", cursor: "pointer", borderRadius: 4, marginLeft: 6 }}
-                >
-                  Delete
-                </button>
-              )}
-              {f.sharedAs && (
-                <>
-                <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
-                  shared ({f.sharedAs})
-                  </span>
-                  <button
-                  onClick={() => onLeaveShared(f._id)}
-                  style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4, background: "#888", color: "#fff", border: "none" }}
-                  >
-                    delete
-                    </button>
-                    </>
-)}
-
-            </td>
-          </tr>
-        ))}
-        {files.length === 0 && (
-          <tr>
-            <td colSpan="5">No files yet</td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-
-    {shareTarget && (
-      <div style={{ marginTop: 20, padding: 16, border: "1px solid #aad", borderRadius: 8, background: "#000002" }}>
-        <strong>share file</strong>
-        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            placeholder="אימייל המשתמש"
-            value={shareEmail}
-            onChange={(e) => setShareEmail(e.target.value)}
-            style={{ padding: 8, flex: 1, minWidth: 200 }}
-          />
-          <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} style={{ padding: 8 }}>
-            <option value="read">read only</option>
-            <option value="write">read + write</option>
-            <option value="admin">admin</option>
-          </select>
-          <button
-            onClick={() => onShare(shareTarget)}
-            style={{ padding: "8px 16px", background: "#4472C4", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-          >
-            share
-          </button>
-          <button
-            onClick={() => setShareTarget(null)}
-            style={{ padding: "8px 12px", background: "#000000", border: "1px solid #000000", borderRadius: 4, cursor: "pointer" }}
-          >
-            cancel
+      <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+        <input type="file" onChange={(e) => setSelected(e.target.files?.[0] || null)} />
+        <button onClick={onUpload} style={{ marginLeft: 10 }}>Encrypt + Upload</button>
+        <button onClick={() => refreshFiles().catch(() => {})} style={{ marginLeft: 10 }}>Refresh</button>
+        <div style={{ marginTop: 10, color: "#444", whiteSpace: "pre-wrap" }}>{status}</div>
+      </div>
+      {notifications.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          {notifications.map((n, i) => (
+            <div key={i} style={{ padding: "8px 12px", background: "#e8f5e9", border: "1px solid #000", borderRadius: 6, marginBottom: 6 }}>
+              🔔 {n.message}
+            </div>
+          ))}
+          <button onClick={() => setNotifications([])}
+            style={{ fontSize: 12, color: "#666", background: "none", border: "none", cursor: "pointer" }}>
+            clear notifications
           </button>
         </div>
-      </div>
-    )}
-
-    {versionTarget && (
-      <div style={{ marginTop: 20, padding: 16, border: "1px solid rgb(0, 0, 0)", borderRadius: 8, background: "#000000" }}>
-        <strong>upload new version</strong>
-        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            type="file"
-            onChange={(e) => setVersionSelected(e.target.files?.[0] || null)}
-          />
-          <button
-            onClick={() => onUploadVersion(versionTarget)}
-            style={{ padding: "8px 16px", background: "#2e7d32", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
-          >
-            upload
-          </button>
-          <button
-            onClick={() => { setVersionTarget(null); setVersionSelected(null); }}
-            style={{ padding: "8px 12px", background: "none", border: "1px solid #aaa", borderRadius: 4, cursor: "pointer" }}
-          >
-            cancel
-          </button>
+      )}
+      <h3 style={{ marginTop: 24 }}>Uploaded files</h3>
+      <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+            <th>originalName</th><th>Stored name</th><th>Algorithm</th><th>Created</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {files.map((f) => (
+            <tr key={f._id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+              <td>{f.originalName ?? "-"}</td>
+              <td>{f.storedName}</td>
+              <td>{f.algorithm}</td>
+              <td>{f.createdAt ? new Date(f.createdAt).toLocaleString() : ""}</td>
+              <td>
+                <button onClick={() => onDownloadDecrypt(f._id)}>Download + Decrypt</button>
+                {!f.sharedAs && <>
+                  <button onClick={() => { setShareTarget(f._id); setShareEmail(""); setShareRole("read"); }}
+                    style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4 }}>share</button>
+                  <button onClick={() => { setVersionTarget(f._id); setVersionSelected(null); }}
+                    style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4 }}>new version</button>
+                  <button onClick={() => onDelete(f._id)}
+                    style={{ color: "#fff", background: "#c00", border: "none", padding: "4px 10px", cursor: "pointer", borderRadius: 4, marginLeft: 6 }}>Delete</button>
+                </>}
+                {f.sharedAs && <>
+                  <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>shared ({f.sharedAs})</span>
+                  <button onClick={() => onLeaveShared(f._id)}
+                    style={{ marginLeft: 6, padding: "4px 10px", cursor: "pointer", borderRadius: 4, background: "#888", color: "#fff", border: "none" }}>delete</button>
+                </>}
+              </td>
+            </tr>
+          ))}
+          {files.length === 0 && <tr><td colSpan="5">No files yet</td></tr>}
+        </tbody>
+      </table>
+      {shareTarget && (
+        <div style={{ marginTop: 20, padding: 16, border: "1px solid #aad", borderRadius: 8, background: "#000002" }}>
+          <strong>share file</strong>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input placeholder="אימייל המשתמש" value={shareEmail} onChange={(e) => setShareEmail(e.target.value)}
+              style={{ padding: 8, flex: 1, minWidth: 200 }} />
+            <select value={shareRole} onChange={(e) => setShareRole(e.target.value)} style={{ padding: 8 }}>
+              <option value="read">read only</option>
+              <option value="write">read + write</option>
+              <option value="admin">admin</option>
+            </select>
+            <button onClick={() => onShare(shareTarget)}
+              style={{ padding: "8px 16px", background: "#4472C4", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>share</button>
+            <button onClick={() => setShareTarget(null)}
+              style={{ padding: "8px 12px", background: "#000", border: "1px solid #000", borderRadius: 4, cursor: "pointer" }}>cancel</button>
+          </div>
         </div>
-      </div>
-    )}
-  </div>
-);
-
+      )}
+      {versionTarget && (
+        <div style={{ marginTop: 20, padding: 16, border: "1px solid #000", borderRadius: 8, background: "#000" }}>
+          <strong>upload new version</strong>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="file" onChange={(e) => setVersionSelected(e.target.files?.[0] || null)} />
+            <button onClick={() => onUploadVersion(versionTarget)}
+              style={{ padding: "8px 16px", background: "#2e7d32", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>upload</button>
+            <button onClick={() => { setVersionTarget(null); setVersionSelected(null); }}
+              style={{ padding: "8px 12px", background: "none", border: "1px solid #aaa", borderRadius: 4, cursor: "pointer" }}>cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

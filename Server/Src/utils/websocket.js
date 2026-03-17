@@ -19,7 +19,6 @@ export function initWebSocket(server){
                         clients.set(userId, ws);
                             ws.on("close", () => {
                                       clients.delete(userId);
-                                      console.log(`WS disconnected: ${userId}`);
                                      });
                                     });
                                 }
