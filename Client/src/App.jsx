@@ -68,11 +68,17 @@ export default function App() {
       </div>
       {notifications.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          {notifications.map((n, i) => (
-            <div key={i} style={{ padding: "8px 12px", background: "#e8f5e9", border: "1px solid #000", borderRadius: 6, marginBottom: 6 }}>
-              🔔 {n.message}
-            </div>
-          ))}
+         {notifications.map((n, i) => (
+          <div key={i} style={{
+            padding: "8px 12px",
+            background: n.type === "anomaly_alert" ? "#ffebee" : "#e8f5e9",
+            border: `1px solid ${n.type === "anomaly_alert" ? "#c00" : "#000"}`,
+            borderRadius: 6, marginBottom: 6
+            }}>
+              {n.type === "anomaly_alert" ? "⚠️" : "🔔"} {n.message}
+              </div>
+            ))}
+
           <button onClick={() => setNotifications([])}
             style={{ fontSize: 12, color: "#666", background: "none", border: "none", cursor: "pointer" }}>
             clear notifications

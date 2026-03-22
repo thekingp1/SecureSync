@@ -44,7 +44,6 @@ export function useApp() {
     if (stage !== "files") return;
     refreshFiles().catch((e) => setStatus(`Failed to load files: ${String(e)}`));
   }, [stage]);
-
   useWebSocket(stage, getToken, (data) => {
     setNotifications((prev) => [data, ...prev]);
     if (data.type === "file_shared") refreshFiles();

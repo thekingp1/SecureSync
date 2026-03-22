@@ -7,6 +7,8 @@ import { hasPermission } from "../utils/permissions.js";
 import Permission from "../models/Permission.js";
 
 import { logAudit } from "../utils/audit.js";
+import { analyzeEvent } from "../utils/anomaly.js";
+import { sendToUser } from "../utils/websocket.js";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -63,6 +65,14 @@ export async function uploadFile(req, res) {
     });
 
     await logAudit({ userId: req.user.id, action: "upload", outcome: "success", req, fileId: doc._id });
+    const result = await analyzeEvent({ userId: req.user.id, action: "upload" });
+    if (result?.anomaly) {
+      sendToUser(String(req.user.id), {
+        type: "anomaly_alert",
+        message: `⚠️ Anomaly: ${result.details.join(", ")}`,
+        score: result.score,
+      });
+    }
     res.json({ id: doc._id });
   } catch (e) {
     console.error("Upload failed:", e);
@@ -131,6 +141,14 @@ export async function downloadFile(req, res) {
     res.setHeader("Access-Control-Expose-Headers", "x-securesync-meta");
 
     await logAudit({ userId: req.user.id, action: "download", outcome: "success", req, fileId: doc._id });
+    const result = await analyzeEvent({ userId: req.user.id, action: "download" });
+    if (result?.anomaly) {
+      sendToUser(String(req.user.id), {
+        type: "anomaly_alert",
+        message: `⚠️ Anomaly detected: ${result.details.join(", ")}`,
+        score: result.score,
+      });
+    }
     fs.createReadStream(filePath).pipe(res);
   } catch (e) {
     console.error("Download failed:", e);
@@ -161,6 +179,14 @@ export async function deleteFile(req, res) {
     await doc.deleteOne();
     await Permission.deleteMany({ fileId: doc._id }); // נקה הרשאות של הקובץ
     await logAudit({ userId: req.user.id, action: "delete", outcome: "success", req, fileId: doc._id });
+    const result = await analyzeEvent({ userId: req.user.id, action: "delete" });
+    if (result?.anomaly) {
+      sendToUser(String(req.user.id), {
+        type: "anomaly_alert",
+        message: `⚠️ Anomaly detected: ${result.details.join(", ")}`,
+        score: result.score,
+      });
+    }
     res.json({ message: "Deleted successfully" });
   } catch (e) {
     console.error("Delete failed:", e);
