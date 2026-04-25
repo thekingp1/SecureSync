@@ -9,7 +9,10 @@ export async function analyzeEvent({userId, action}){
                 timestamp: new Date().toISOString(),
             }),
         });
-        return await res.json();
+        // return await res.json();
+        const data = await res.json();
+console.log("anomaly result:", data);
+return data;
     } catch(e){
         console.error("anomaly servier error:", e.message);
         return null;

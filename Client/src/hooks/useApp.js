@@ -6,6 +6,7 @@ import {
 } from "../api.js";
 import { useWebSocket } from "./useWebSocket.js";
 
+
 export function useApp() {
   const [stage, setStage] = useState("login");
   const [email, setEmail] = useState("");
@@ -21,6 +22,7 @@ export function useApp() {
   const [versionTarget, setVersionTarget] = useState(null);
   const [versionSelected, setVersionSelected] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   function getToken() { return localStorage.getItem("securesync_token"); }
   function setToken(t) { localStorage.setItem("securesync_token", t); }
@@ -133,6 +135,6 @@ export function useApp() {
     versionTarget, setVersionTarget, versionSelected, setVersionSelected,
     notifications, setNotifications,
     refreshFiles, onRegister, onLogin, onVerifyOtp, onLogout,
-    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,
+    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,showDashboard, setShowDashboard
   };
 }

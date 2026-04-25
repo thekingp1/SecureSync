@@ -1,4 +1,5 @@
 import { useApp } from "./hooks/useApp.js";
+import Dashboard from "./components/Dashboard.jsx";
 
 export default function App() {
   const {
@@ -8,7 +9,7 @@ export default function App() {
     versionTarget, setVersionTarget, versionSelected, setVersionSelected,
     notifications, setNotifications,
     refreshFiles, onRegister, onLogin, onVerifyOtp, onLogout,
-    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,
+    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,showDashboard, setShowDashboard
   } = useApp();
 
   if (stage === "login") return (
@@ -58,8 +59,20 @@ export default function App() {
     <div style={{ maxWidth: 900, margin: "30px auto", fontFamily: "Arial" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>SecureSync – Encrypted Files</h2>
+        <div>
+          <button onClick={()=> setShowDashboard(true)} style={{ padding: "8px 12px", marginRight: 8}}>
+            Dashboard</button>
         <button onClick={onLogout} style={{ padding: "8px 12px" }}>Logout</button>
+        </div>
       </div>
+
+      {showDashboard ? (
+        <Dashboard
+        token={localStorage.getItem("securesync_token")}
+        onBack={()=> setShowDashboard(false)}
+        />
+      ):(
+        <>
       <div style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
         <input type="file" onChange={(e) => setSelected(e.target.files?.[0] || null)} />
         <button onClick={onUpload} style={{ marginLeft: 10 }}>Encrypt + Upload</button>
@@ -150,6 +163,8 @@ export default function App() {
           </div>
         </div>
       )}
+      </>
+    )}
     </div>
   );
 }

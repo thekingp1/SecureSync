@@ -8,6 +8,7 @@ import { authRequired } from "./middlewares/auth.js";
 import permissionRouter from "./routes/permission.routes.js";
 import fileVersionRouter from "./routes/FileVersion.routes.js";
 import { initWebSocket } from "./utils/websocket.js";
+import adminRouter from "./routes/admin.routes.js";
 
 
 
@@ -22,6 +23,7 @@ app.use("/files", authRequired, filesRouter);
 app.use("/users", userRoutes);
 app.use("/files", authRequired, permissionRouter);
 app.use("/files", authRequired, fileVersionRouter);
+app.use("/admin", authRequired, adminRouter);
 
 const PORT = process.env.PORT || 4000;
 

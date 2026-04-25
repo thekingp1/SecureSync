@@ -155,3 +155,26 @@ export async function apiLeaveShared(token, fileId) {
   });
   if (!res.ok) throw new Error(await res.text());
 }
+export async function apiFetchAuditLogs(token) {
+  const res = await fetch("/admin/auditlogs", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiFetchAnomalyScores(token) {
+  const res = await fetch("/admin/anomalyscores", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiFetchSessions(token) {
+  const res = await fetch("/admin/sessions", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
