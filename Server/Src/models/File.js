@@ -13,6 +13,7 @@ const fileSchema = new mongoose.Schema(
 
     encryptedMetaB64:   { type: String, required: true },
     metaIvB64:          { type: String, required: true },
+    signature: {type: String, default: null},
   },
   { timestamps: true }
 );

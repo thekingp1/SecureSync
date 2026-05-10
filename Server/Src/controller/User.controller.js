@@ -5,6 +5,8 @@ import nodemailer from "nodemailer";
 import User from "../models/User.model.js";
 import crypto from "crypto";
 import Session from "../models/Session.js";
+import { generateKeyPair } from "../utils/pki.js";
+
 
 console.log("EMAIL_HOST:", process.env.EMAIL_HOST);
 
@@ -30,7 +32,8 @@ export async function register(req, res) {
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ message: "Email already in use" });
     const hashed = await bcrypt.hash(password, 12);
-    await User.create({ email, name, password: hashed });
+    const user = await User.create({ email, name, password: hashed });
+    await generateKeyPair(user._id);
     res.status(201).json({ message: "Registered successfully" });
   } catch (e) {
     console.error("Register error:", e);

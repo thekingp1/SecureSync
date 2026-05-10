@@ -178,3 +178,54 @@ export async function apiFetchSessions(token) {
   if (!res.ok) throw new Error(res.status);
   return res.json();
 }
+export async function apiFetchDevices(token) {
+  const res = await fetch("/devices", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+export async function apiBlockDevice(token, hostname, ipAddress, reason) {
+  const res = await fetch("/admin/block", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ hostname, ipAddress, reason }),
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiUnblockDevice(token, blockId) {
+  const res = await fetch(`/admin/block/${blockId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiFetchBlockRules(token) {
+  const res = await fetch("/admin/blocks", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiFetchUsers(token) {
+  const res = await fetch("/admin/users", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+export async function apiBlockUser(token, userId, reason) {
+  const res = await fetch("/admin/block-user", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, reason }),
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}

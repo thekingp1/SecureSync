@@ -8,6 +8,8 @@ export default defineConfig({
       "/files": "http://localhost:4000",
       "/users": "http://localhost:4000",
       "/admin": "http://localhost:4000",
+      "/devices": "http://localhost:4000", 
+
     }
   }
 })

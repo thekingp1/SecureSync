@@ -10,6 +10,8 @@ import { logAudit } from "../utils/audit.js";
 import { analyzeEvent } from "../utils/anomaly.js";
 import { sendToUser } from "../utils/websocket.js";
 
+import { signBuffer, getUserKeyPair, verifySignature } from "../utils/pki.js";
+
 const uploadDir = path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -56,13 +58,25 @@ export async function uploadFile(req, res) {
       return res.status(400).json({ error: "ciphertextSha256 mismatch" });
     }
 
-    const doc = await File.create({
-      userId: req.user.id,
-      storedName: req.file.filename,
-      ciphertextSize: req.file.size,
-      ciphertextSha256B64,
-      algorithm, ivB64, wrappedKeyB64, encryptedMetaB64, metaIvB64,
-    });
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const keyPair = await getUserKeyPair(req.user.id);
+    let signature = null;
+    if (keyPair) {
+      signature = signBuffer(fileBuffer, keyPair.privateKey);
+    }
+
+const doc = await File.create({
+  userId:              req.user.id,
+  storedName:          req.file.filename,
+  ciphertextSize:      req.file.size,
+  ciphertextSha256B64: ciphertextSha256B64,
+  algorithm:           algorithm,
+  ivB64:               ivB64,
+  wrappedKeyB64:       wrappedKeyB64,
+  encryptedMetaB64:    encryptedMetaB64,
+  metaIvB64:           metaIvB64,
+  signature:           signature,
+});
 
     await logAudit({ userId: req.user.id, action: "upload", outcome: "success", req, fileId: doc._id });
     const result = await analyzeEvent({ userId: req.user.id, action: "upload" });
@@ -129,6 +143,17 @@ export async function downloadFile(req, res) {
       await logAudit({ userId: req.user.id, action: "download", outcome: "failure", req, fileId: doc._id, detail: "File missing on disk" });
       return res.status(404).json({ error: "File missing on disk" });
     }
+    if (doc.signature) {
+      const fileBuffer = fs.readFileSync(filePath);
+      const keyPair = await getUserKeyPair(doc.userId);
+      if (keyPair) {
+        const valid = verifySignature(fileBuffer, doc.signature, keyPair.publicKey);
+        if (!valid) {
+          await logAudit({ userId: req.user.id, action: "download", outcome: "failure", req, fileId: doc._id, detail: "Invalid signature — file may have been tampered" });
+          return res.status(403).json({ error: "File signature invalid — possible tampering detected" });
+        }
+      }
+    }
 
     const meta = {
       algorithm: doc.algorithm, ivB64: doc.ivB64, wrappedKeyB64: doc.wrappedKeyB64,
@@ -175,7 +200,6 @@ export async function deleteFile(req, res) {
     if (fs.existsSync(filePath)) {
       try { fs.unlinkSync(filePath); } catch {}
     }
-
     await doc.deleteOne();
     await Permission.deleteMany({ fileId: doc._id }); // נקה הרשאות של הקובץ
     await logAudit({ userId: req.user.id, action: "delete", outcome: "success", req, fileId: doc._id });
