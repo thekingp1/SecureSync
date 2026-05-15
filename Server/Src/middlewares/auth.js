@@ -11,7 +11,7 @@ export async function authRequired(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
-
+    
     const session = await Session.findOne({ jti: payload.jti });
 
     if (!session)

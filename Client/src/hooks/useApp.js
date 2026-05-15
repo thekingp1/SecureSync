@@ -23,6 +23,7 @@ export function useApp() {
   const [versionSelected, setVersionSelected] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [alerts, setAlerts] = useState([]);
 
   function getToken() { return localStorage.getItem("securesync_token"); }
   function setToken(t) { localStorage.setItem("securesync_token", t); }
@@ -49,6 +50,9 @@ export function useApp() {
   useWebSocket(stage, getToken, (data) => {
     setNotifications((prev) => [data, ...prev]);
     if (data.type === "file_shared") refreshFiles();
+    if (data.type === "ANOMALY_ALERT") {
+      setAlerts((prev) => [data, ...prev]);
+    }
   });
 
   async function onRegister() {
@@ -73,7 +77,7 @@ export function useApp() {
 
   async function onLogout() {
     const token = getToken();
-    if (token) try { await apiLogout(token); } catch {}
+    if (token) try { await apiLogout(token); } catch { }
     clearToken(); setFiles([]); setSelected(null); setStage("login"); setStatus("Logged out.");
   }
 
@@ -135,6 +139,6 @@ export function useApp() {
     versionTarget, setVersionTarget, versionSelected, setVersionSelected,
     notifications, setNotifications,
     refreshFiles, onRegister, onLogin, onVerifyOtp, onLogout,
-    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,showDashboard, setShowDashboard
+    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared, showDashboard, setShowDashboard, alerts, setAlerts
   };
 }

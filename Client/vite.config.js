@@ -5,11 +5,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/files": "http://localhost:4000",
-      "/users": "http://localhost:4000",
-      "/admin": "http://localhost:4000",
-      "/devices": "http://localhost:4000", 
-
+      "/files": { target: "https://localhost:4000", secure: false, changeOrigin: true },
+      "/users": { target: "https://localhost:4000", secure: false, changeOrigin: true },
+      "/admin": { target: "https://localhost:4000", secure: false, changeOrigin: true },
+      "/devices": { target: "https://localhost:4000", secure: false, changeOrigin: true },
     }
   }
 })

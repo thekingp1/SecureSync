@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
+import https from "https";
+import fs from "fs";
+import path from "path";
 import filesRouter from "./routes/files.js";
 import userRoutes from "./routes/User.routes.js";
 import { authRequired } from "./middlewares/auth.js";
@@ -30,10 +33,17 @@ app.use("/devices", deviceRouter);
 
 const PORT = process.env.PORT || 4000;
 
+const certDir = path.resolve(process.cwd());
+const tlsOptions = {
+  key:  fs.readFileSync(path.join(certDir, "key.pem")),
+  cert: fs.readFileSync(path.join(certDir, "cert.pem")),
+};
+
 async function start() {
   await mongoose.connect(process.env.MONGO_URI);
-  const httpserver = app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
-  initWebSocket(httpserver);
+  const server = https.createServer(tlsOptions, app);
+  server.listen(PORT, () => console.log(`Server running on https://localhost:${PORT}`));
+  initWebSocket(server);
 }
 
 start().catch((err) => {

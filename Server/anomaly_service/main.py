@@ -3,8 +3,10 @@ from pymongo import MongoClient
 from datetime import datetime, timedelta
 from bson import ObjectId
 from sklearn.ensemble import IsolationForest
+from sklearn.svm import OneClassSVM
 import numpy as np
 import os
+
 
 app = Flask(__name__)
 db = MongoClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))["securesync"]
@@ -42,6 +44,15 @@ def isolation_forest_score(features_matrix, new_point):
     clf.fit(X)
     pred = clf.predict([new_point])
     return pred[0] == -1  # -1 = אנומליה
+
+def one_class_svm_score(features_matrix, new_point):
+    if len(features_matrix) < 5:
+        return False
+    X = np.array(features_matrix)
+    clf = OneClassSVM(nu=0.1, kernel="rbf", gamma="auto")
+    clf.fit(X)
+    pred = clf.predict([new_point])
+    return pred[0] == -1
 
 # ─── BASELINE UPDATE ───────────────────────────────────────────────────────────
 def update_baseline(user_id, logs):
@@ -122,8 +133,8 @@ def analyze():
     ewma_del_expected = baseline.get("ewmaDel", baseline["avgDel"])
     ewma_dl_dev  = abs(today_dl  - ewma_dl_expected)
     ewma_del_dev = abs(today_del - ewma_del_expected)
-    ewma_anomaly = (ewma_dl_dev > 2 * baseline["stdDl"] + 1) or \
-                   (ewma_del_dev > 2 * baseline["stdDel"] + 1)
+    ewma_anomaly = (ewma_dl_dev > 2 * baseline["stdDl"] + 20) or \
+               (ewma_del_dev > 2 * baseline["stdDel"] + 20)
 
     # ── ISOLATION FOREST ──
     historical_logs = [l for l in logs if l["createdAt"].date() < today]
@@ -148,10 +159,10 @@ def analyze():
     ]
     new_point = [current_hour, today_dl, today_del]
     if_anomaly = isolation_forest_score(features_matrix, new_point)
+    svm_anomaly = one_class_svm_score(features_matrix, new_point)
 
     # ── החלטה סופית ──
-    anomaly = (z_score > 2) or ewma_anomaly or if_anomaly
-
+    anomaly = (z_score > 2) or if_anomaly or bool(svm_anomaly)
     score_doc = {
         "userId": user_id,
         "action": action,
@@ -161,6 +172,7 @@ def analyze():
         "anomaly": bool(anomaly),
         "details": f"z={round(z_score,2)} | ewma_dl_dev={round(ewma_dl_dev,2)} ewma_del_dev={round(ewma_del_dev,2)} | IF={if_anomaly}",
         "createdAt": now,
+        "svmAnomaly": bool(svm_anomaly),
     }
 
     if anomaly:
@@ -171,7 +183,8 @@ def analyze():
         "zScore": round(z_score, 3),
         "ewmaAnomaly": bool(ewma_anomaly),
         "isolationForestAnomaly": bool(if_anomaly),
-        "details": score_doc["details"]
+        "details": score_doc["details"],
+        "svmAnomaly": bool(svm_anomaly),
     })
 
 if __name__ == "__main__":

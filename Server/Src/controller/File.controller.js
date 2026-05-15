@@ -83,7 +83,7 @@ const doc = await File.create({
     if (result?.anomaly) {
       sendToUser(String(req.user.id), {
         type: "anomaly_alert",
-        message: `⚠️ Anomaly: ${result.details.join(", ")}`,
+        message: `⚠️ Anomaly: ${result.details}`,
         score: result.score,
       });
     }
@@ -170,7 +170,7 @@ export async function downloadFile(req, res) {
     if (result?.anomaly) {
       sendToUser(String(req.user.id), {
         type: "anomaly_alert",
-        message: `⚠️ Anomaly detected: ${result.details.join(", ")}`,
+        message: `⚠️ Anomaly detected: ${result.details}`,
         score: result.score,
       });
     }
@@ -207,7 +207,7 @@ export async function deleteFile(req, res) {
     if (result?.anomaly) {
       sendToUser(String(req.user.id), {
         type: "anomaly_alert",
-        message: `⚠️ Anomaly detected: ${result.details.join(", ")}`,
+        message: `⚠️ Anomaly detected: ${result.details}`,
         score: result.score,
       });
     }

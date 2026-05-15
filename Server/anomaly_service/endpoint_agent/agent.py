@@ -71,6 +71,19 @@ def get_antivirus():
             return False
     return False
 
+def get_pending_updates():
+    if platform.system() == "Windows":
+        try:
+            result = subprocess.run(
+                ["powershell", "-Command",
+                 "(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search('IsInstalled=0').Updates.Count"],
+                capture_output=True, text=True, timeout=10
+            )
+            return int(result.stdout.strip())
+        except:
+            return -1
+    return 0
+
 def send_heartbeat(token):
     try:
         data = {
@@ -80,6 +93,7 @@ def send_heartbeat(token):
             "ipAddress": get_ip(),
             "openPorts": get_open_ports(),
             "antivirus": get_antivirus(),
+            "pendingUpdates": get_pending_updates(),
         }
         res = requests.post(
             f"{SERVER_URL}/devices/heartbeat",

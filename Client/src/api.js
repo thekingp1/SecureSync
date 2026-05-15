@@ -1,6 +1,6 @@
 import { encryptFileWithWrappedKey, decryptPackage, decryptMeta } from "./crypto/crypto.js";
 
-export const API_BASE = "http://localhost:4000";
+export const API_BASE = "https://localhost:4000";
 
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

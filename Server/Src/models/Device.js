@@ -10,6 +10,7 @@ const DeviceSchema = new mongoose.Schema({
   antivirus:   { type: Boolean, default: false },
   lastSeen:    { type: Date, default: Date.now },
   status:      { type: String, enum: ["online", "offline"], default: "online" },
+  pendingUpdates: { type: Number, default: 0 },
 }, { timestamps: true });
 
 export default mongoose.model("Device", DeviceSchema);

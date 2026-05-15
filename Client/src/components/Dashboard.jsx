@@ -15,8 +15,8 @@ export default function Dashboard({ token, onBack }) {
     apiFetchAnomalyScores(token).then(setAnomalies).catch(() => { });
     apiFetchSessions(token).then(setSessions).catch(() => { });
     apiFetchDevices(token).then(setDevices).catch(() => { });
-    apiFetchBlockRules(token).then(setBlockRules).catch(() => {});
-    apiFetchUsers(token).then(setUsers).catch(() => {});
+    apiFetchBlockRules(token).then(setBlockRules).catch(() => { });
+    apiFetchUsers(token).then(setUsers).catch(() => { });
   }, []);
 
   const tabStyle = (t) => ({
@@ -26,38 +26,38 @@ export default function Dashboard({ token, onBack }) {
     fontSize: 14,
   });
   async function handleBlock(device) {
-  const reason = prompt("סיבת החסימה:") || "Manual block";
-  await apiBlockDevice(token, device.hostname, device.ipAddress, reason);
-  apiFetchBlockRules(token).then(setBlockRules);
-  alert(`${device.hostname} נחסם`);
-}
+    const reason = prompt("סיבת החסימה:") || "Manual block";
+    await apiBlockDevice(token, device.hostname, device.ipAddress, reason);
+    apiFetchBlockRules(token).then(setBlockRules);
+    alert(`${device.hostname} נחסם`);
+  }
 
-function isBlocked(device) {
-  return blockRules.find(r => r.hostname === device.hostname || r.ipAddress === device.ipAddress);
-}
+  function isBlocked(device) {
+    return blockRules.find(r => r.hostname === device.hostname || r.ipAddress === device.ipAddress);
+  }
 
-async function handleUnblock(blockRule) {
-  await apiUnblockDevice(token, blockRule._id);
-  apiFetchBlockRules(token).then(setBlockRules);
-  alert("החסימה הוסרה");
-}
+  async function handleUnblock(blockRule) {
+    await apiUnblockDevice(token, blockRule._id);
+    apiFetchBlockRules(token).then(setBlockRules);
+    alert("החסימה הוסרה");
+  }
 
-function isUserBlocked(user) {
-  return blockRules.find(r => r.userId === user._id);
-}
+  function isUserBlocked(user) {
+    return blockRules.find(r => r.userId === user._id);
+  }
 
-async function handleBlockUser(user) {
-  const reason = prompt("סיבת החסימה:") || "Manual block";
-  await apiBlockUser(token, user._id, reason);
-  apiFetchBlockRules(token).then(setBlockRules);
-  alert(`${user.email} נחסם`);
-}
+  async function handleBlockUser(user) {
+    const reason = prompt("סיבת החסימה:") || "Manual block";
+    await apiBlockUser(token, user._id, reason);
+    apiFetchBlockRules(token).then(setBlockRules);
+    alert(`${user.email} נחסם`);
+  }
 
-async function handleUnblockUser(blockRule) {
-  await apiUnblockDevice(token, blockRule._id);
-  apiFetchBlockRules(token).then(setBlockRules);
-  alert("החסימה הוסרה");
-}
+  async function handleUnblockUser(blockRule) {
+    await apiUnblockDevice(token, blockRule._id);
+    apiFetchBlockRules(token).then(setBlockRules);
+    alert("החסימה הוסרה");
+  }
 
   return (
     <div style={{ maxWidth: 1000, margin: "30px auto", fontFamily: "Arial" }}>
@@ -157,7 +157,7 @@ async function handleUnblockUser(blockRule) {
         <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#1e1e2e", color: "#fff", textAlign: "left" }}>
-              <th>computer name</th><th>OS</th><th>IP</th><th>open ports</th><th>anti-virus</th><th>last seen</th><th>status</th><th>block</th>
+              <th>computer name</th><th>OS</th><th>IP</th><th>open ports</th><th>anti-virus</th><th>last seen</th><th>status</th><th>update waiting</th><th>block</th>
             </tr>
           </thead>
           <tbody>
@@ -173,6 +173,9 @@ async function handleUnblockUser(blockRule) {
                 <td>{new Date(d.lastSeen).toLocaleString()}</td>
                 <td style={{ color: d.status === "online" ? "green" : "red" }}>
                   {d.status}
+                </td>
+                <td style={{ color: d.pendingUpdates > 0 ? "orange" : "green" }}>
+                  {d.pendingUpdates > 0 ? `⚠️ ${d.pendingUpdates}` : "✓ מעודכן"}
                 </td>
                 <td>
                   {isBlocked(d) ? (
@@ -193,7 +196,7 @@ async function handleUnblockUser(blockRule) {
                 </td>
               </tr>
             ))}
-            {devices.length === 0 && <tr><td colSpan="8">  no devices connected</td></tr>}
+            {devices.length === 0 && <tr><td colSpan="9">  no devices connected</td></tr>}
           </tbody>
         </table>
       )}

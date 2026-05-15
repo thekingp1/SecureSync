@@ -8,8 +8,9 @@ export default function App() {
     shareTarget, setShareTarget, shareEmail, setShareEmail, shareRole, setShareRole,
     versionTarget, setVersionTarget, versionSelected, setVersionSelected,
     notifications, setNotifications,
+    alerts, setAlerts,
     refreshFiles, onRegister, onLogin, onVerifyOtp, onLogout,
-    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared,showDashboard, setShowDashboard
+    onUpload, onDownloadDecrypt, onDelete, onUploadVersion, onShare, onLeaveShared, showDashboard, setShowDashboard
   } = useApp();
 
   if (stage === "login") return (
@@ -65,6 +66,34 @@ export default function App() {
         <button onClick={onLogout} style={{ padding: "8px 12px" }}>Logout</button>
         </div>
       </div>
+
+      {alerts.length > 0 && (
+        <div style={{
+          position: "fixed", top: 16, right: 16, zIndex: 9999,
+          maxWidth: 360, display: "flex", flexDirection: "column", gap: 8
+        }}>
+          {alerts.map((a, i) => (
+            <div key={i} style={{
+              background: "#c62828", color: "#fff",
+              padding: "12px 16px", borderRadius: 8,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+              fontSize: 14
+            }}>
+              <strong>⚠️ זוהתה אנומליה!</strong>
+              <div style={{ marginTop: 4, fontSize: 12 }}>
+                משתמש: {a.userId} | פעולה: {a.action}
+              </div>
+              <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>
+                Z-score: {a.zScore} | {a.details}
+              </div>
+            </div>
+          ))}
+          <button onClick={() => setAlerts([])}
+            style={{ background: "none", border: "1px solid #fff", color: "#fff", padding: "4px 10px", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
+            סגור התראות
+          </button>
+        </div>
+      )}
 
       {showDashboard ? (
         <Dashboard
