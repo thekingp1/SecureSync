@@ -37,6 +37,7 @@ const certDir = path.resolve(process.cwd());
 const tlsOptions = {
   key:  fs.readFileSync(path.join(certDir, "key.pem")),
   cert: fs.readFileSync(path.join(certDir, "cert.pem")),
+  minVersion: "TLSv1.3",
 };
 
 async function start() {
